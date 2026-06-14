@@ -1,12 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
-import { createClientComponentClient, createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+﻿import { createClient } from '@supabase/supabase-js'
 
-// Types for our database
+// Database types
 export type Database = {
   public: {
     Tables: {
-      profiles: {
+      users: {
         Row: {
           id: string
           email: string
@@ -48,104 +46,31 @@ export type Database = {
           name?: string | null
         }
       }
-      keywords: {
-        Row: {
-          id: string
-          domain_id: string
-          keyword: string
-          search_volume: number | null
-          difficulty: number | null
-          cpc: number | null
-          created_at: string
-        }
-        Insert: {
-          domain_id: string
-          keyword: string
-          search_volume?: number | null
-          difficulty?: number | null
-          cpc?: number | null
-        }
-        Update: {
-          keyword?: string
-          search_volume?: number | null
-          difficulty?: number | null
-          cpc?: number | null
-        }
-      }
-      rankings: {
-        Row: {
-          id: string
-          keyword_id: string
-          position: number | null
-          url: string | null
-          checked_at: string
-        }
-        Insert: {
-          keyword_id: string
-          position?: number | null
-          url?: string | null
-          checked_at?: string
-        }
-        Update: {
-          position?: number | null
-          url?: string | null
-        }
-      }
     }
   }
 }
 
-// Environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// NEXT_PUBLIC_* values are inlined at build time. Fallbacks keep the build from
+// failing if env vars are missing; real values are required at runtime.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 
-// Client-side Supabase client (for use in Client Components)
-export const createBrowserClient = () => {
-  return createClientComponentClient<Database>()
-}
+// Single browser client â€” safe to import in Client Components.
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+})
 
-// Server-side Supabase client (for use in Server Components)
-export const createServerClient = () => {
-  const cookieStore = cookies()
-  return createServerComponentClient<Database>({ cookies: () => cookieStore })
-}
+// Back-compat factory used by hooks/use-auth.ts
+export const createBrowserClient = () => supabase
 
-// Admin client (for server-side operations that need elevated privileges)
+// Admin client â€” ONLY use in server-side code where SUPABASE_KEY (service_role) is set.
 export const createAdminClient = () => {
-  const supabaseServiceKey = process.env.SUPABASE_KEY!
-  return createClient<Database>(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+  const serviceKey = process.env.SUPABASE_KEY || ''
+  return createClient<Database>(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   })
-}
-
-// Helper function to get current user
-export const getCurrentUser = async () => {
-  const supabase = createServerClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-  
-  if (error || !user) {
-    return null
-  }
-  
-  return user
-}
-
-// Helper function to get user profile
-export const getUserProfile = async (userId: string) => {
-  const supabase = createServerClient()
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-  
-  if (error) {
-    console.error('Error fetching profile:', error)
-    return null
-  }
-  
-  return data
 }
