@@ -214,8 +214,18 @@ class AiController extends Controller
      */
     private function fetchUrlContent(string $url): ?string
     {
+        // SSRF guard: only fetch public http(s) URLs. Blocks attempts to reach
+        // cloud metadata (169.254.169.254), localhost, and private networks.
+        if (!$this->isPublicHttpUrl($url)) {
+            return null;
+        }
+
         try {
             $response = Http::timeout(30)
+                ->withOptions([
+                    'allow_redirects' => false, // a 30x could redirect to an internal host
+                    'max_redirects' => 0,
+                ])
                 ->withHeaders([
                     'User-Agent' => 'SEO Norge Bot/1.0',
                 ])
@@ -250,5 +260,55 @@ class AiController extends Controller
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Validate that a URL is a public http(s) endpoint (anti-SSRF).
+     * Rejects non-http schemes, hosts that resolve to private/reserved/loopback
+     * IP ranges, and the cloud metadata address.
+     */
+    private function isPublicHttpUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return false;
+        }
+
+        if (!in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
+            return false;
+        }
+
+        $host = $parts['host'];
+
+        // Resolve every A/AAAA record; reject if ANY of them is non-public.
+        $ips = [];
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            $ips[] = $host;
+        } else {
+            foreach (['A', 'AAAA'] as $type) {
+                $records = @dns_get_record($host, $type === 'A' ? DNS_A : DNS_AAAA) ?: [];
+                foreach ($records as $r) {
+                    $ips[] = $r['ip'] ?? $r['ipv6'] ?? null;
+                }
+            }
+        }
+
+        $ips = array_filter($ips);
+        if (empty($ips)) {
+            return false; // unresolvable host
+        }
+
+        foreach ($ips as $ip) {
+            if (!filter_var(
+                $ip,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+            )) {
+                return false; // private, reserved, loopback or link-local
+            }
+        }
+
+        return true;
     }
 }

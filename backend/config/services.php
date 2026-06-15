@@ -33,6 +33,17 @@ return [
         'key' => env('STRIPE_KEY'),
         'secret' => env('STRIPE_SECRET'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        // Read via config() (not env()) so production `config:cache` works.
+        'prices' => [
+            'starter' => env('STRIPE_PRICE_STARTER'),
+            'professional' => env('STRIPE_PRICE_PROFESSIONAL'),
+            'agency' => env('STRIPE_PRICE_AGENCY'),
+        ],
+    ],
+
+    // Frontend SPA origin — used for Stripe redirect URLs.
+    'frontend' => [
+        'url' => env('FRONTEND_URL', 'http://localhost:3000'),
     ],
 
     'google' => [

@@ -62,53 +62,56 @@ class OnboardingController extends Controller
             'onboarding_completed_at' => now(),
         ]);
         
-        // Create domain if provided
+        // Create domain if provided (respecting the user's plan limits).
         $domain = null;
         if (!empty($validated['domain'])) {
+            if (!$user->canAddDomain()) {
+                return response()->json([
+                    'message' => 'Du har nådd grensen for antall nettsteder på din plan. Vennligst oppgrader.',
+                ], 403);
+            }
+
             $domainUrl = $this->cleanDomain($validated['domain']);
-            
-            $domain = Domain::create([
-                'user_id' => $user->id,
-                'domain' => $domainUrl,
-                'name' => $validated['domain_name'] ?? $domainUrl,
-                'is_active' => true,
-            ]);
-            
-            // Add keywords if provided
-            if (!empty($validated['keywords']) && $domain) {
+
+            // Skip silently if this domain is already registered for the user.
+            $domain = Domain::firstOrCreate(
+                ['user_id' => $user->id, 'domain' => $domainUrl],
+                ['name' => $validated['domain_name'] ?? $domainUrl]
+            );
+
+            // Add keywords if provided (respecting the keyword limit, dedup, normalized).
+            if (!empty($validated['keywords'])) {
                 foreach ($validated['keywords'] as $keyword) {
-                    $keyword = trim($keyword);
-                    if (!empty($keyword)) {
-                        Keyword::create([
-                            'domain_id' => $domain->id,
-                            'keyword' => $keyword,
-                            'country' => 'no',
-                            'language' => 'no',
-                            'is_active' => true,
-                        ]);
+                    $normalized = strtolower(trim($keyword));
+                    if ($normalized === '' || !$user->canAddKeyword()) {
+                        continue;
                     }
+                    Keyword::firstOrCreate(
+                        ['domain_id' => $domain->id, 'keyword' => $normalized],
+                        ['language' => 'nb'] // Bokmål default; enum is nb|nn|en
+                    );
                 }
             }
-            
-            // Add competitors if provided
-            if (!empty($validated['competitors']) && $domain) {
+
+            // Add competitors if provided.
+            if (!empty($validated['competitors'])) {
                 foreach ($validated['competitors'] as $competitor) {
                     $competitorUrl = $this->cleanDomain(trim($competitor));
                     if (!empty($competitorUrl)) {
-                        Competitor::create([
+                        Competitor::firstOrCreate([
                             'domain_id' => $domain->id,
                             'competitor_domain' => $competitorUrl,
-                            'is_active' => true,
                         ]);
                     }
                 }
             }
         }
-        
-        // Save goals and experience
+
+        // Save goals and experience. `goals` is cast to array on the model,
+        // so pass the raw array (no manual json_encode → avoids double-encoding).
         if (!empty($validated['goals']) || !empty($validated['experience'])) {
             $user->update([
-                'goals' => json_encode($validated['goals'] ?? []),
+                'goals' => $validated['goals'] ?? [],
                 'seo_experience' => $validated['experience'] ?? null,
             ]);
         }
@@ -133,10 +136,10 @@ class OnboardingController extends Controller
         
         $user = $request->user();
         $user->update([
-            'goals' => json_encode($validated['goals']),
+            'goals' => $validated['goals'], // array cast handles JSON encoding
             'seo_experience' => $validated['experience'] ?? null,
         ]);
-        
+
         return response()->json([
             'success' => true,
             'message' => 'Mål lagret!',

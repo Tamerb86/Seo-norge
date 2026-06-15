@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, InputHTMLAttributes, ReactNode, useState } from 'react';
+import { forwardRef, InputHTMLAttributes, ReactNode, useId, useState } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
@@ -73,7 +73,9 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     ref
   ) => {
     const [showPassword, setShowPassword] = useState(false);
-    const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+    // useId() is SSR-safe; Math.random() here caused hydration mismatches.
+    const generatedId = useId();
+    const inputId = id || generatedId;
     
     const currentState = errorMessage ? 'error' : successMessage ? 'success' : state;
     const isPassword = type === 'password';

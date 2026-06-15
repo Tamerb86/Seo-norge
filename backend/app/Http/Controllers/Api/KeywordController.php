@@ -57,15 +57,18 @@ class KeywordController extends Controller
             ], 403);
         }
 
-        // Check if keyword already exists for this domain
-        if ($domain->keywords()->where('keyword', $validated['keyword'])->exists()) {
+        // Normalize first, then check existence against the SAME value we store,
+        // so "Oslo" and "oslo " don't slip past the check and hit the unique index.
+        $normalized = strtolower(trim($validated['keyword']));
+
+        if ($domain->keywords()->where('keyword', $normalized)->exists()) {
             return response()->json([
                 'message' => 'Dette søkeordet er allerede lagt til for dette nettstedet.',
             ], 422);
         }
 
         $keyword = $domain->keywords()->create([
-            'keyword' => strtolower(trim($validated['keyword'])),
+            'keyword' => $normalized,
             'language' => $validated['language'] ?? 'nb',
         ]);
 

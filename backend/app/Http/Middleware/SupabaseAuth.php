@@ -26,9 +26,28 @@ class SupabaseAuth
         }
 
         try {
-            // Decode and verify JWT token
+            // Decode and verify JWT signature.
             $jwtSecret = config('services.supabase.jwt_secret');
+
+            if (empty($jwtSecret)) {
+                Log::error('SUPABASE_JWT_SECRET is not configured.');
+                return response()->json(['message' => 'Autentiseringsfeil.'], 500);
+            }
+
             $decoded = JWT::decode($token, new Key($jwtSecret, 'HS256'));
+
+            // Verify audience: Supabase user tokens carry aud="authenticated".
+            // Without this, ANY token signed with the same secret (e.g. a
+            // service-role or anon token) would be accepted as a user.
+            if (($decoded->aud ?? null) !== 'authenticated' || ($decoded->role ?? null) !== 'authenticated') {
+                return response()->json(['message' => 'Ugyldig token.'], 401);
+            }
+
+            // Verify issuer matches THIS Supabase project.
+            $expectedIssuer = rtrim((string) config('services.supabase.url'), '/') . '/auth/v1';
+            if (!empty(config('services.supabase.url')) && ($decoded->iss ?? null) !== $expectedIssuer) {
+                return response()->json(['message' => 'Ugyldig token-utsteder.'], 401);
+            }
 
             // Extract user ID from token
             $userId = $decoded->sub ?? null;
@@ -40,18 +59,22 @@ class SupabaseAuth
                 ], 401);
             }
 
-            // Find or create user in our database
-            $user = User::firstOrCreate(
-                ['id' => $userId],
-                [
-                    'email' => $email,
-                    'plan' => 'free',
-                ]
-            );
+            // Find or create user in our database. `id` and `plan` are NOT
+            // mass-assignable, so set them via explicit property assignment.
+            // New users always start on the free plan; `plan` is otherwise
+            // only ever changed server-side by the Stripe webhook.
+            $user = User::find($userId);
 
-            // Update email if changed
-            if ($user->email !== $email) {
-                $user->update(['email' => $email]);
+            if (!$user) {
+                $user = new User();
+                $user->id = $userId;
+                $user->email = $email;
+                $user->plan = 'free';
+                $user->save();
+            } elseif ($email && $user->email !== $email) {
+                // Keep the local email in sync with Supabase.
+                $user->email = $email;
+                $user->save();
             }
 
             // Set user on request
