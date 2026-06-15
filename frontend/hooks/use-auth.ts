@@ -28,7 +28,7 @@ type UseAuthReturn = AuthState & AuthActions;
  */
 export function useAuth(): UseAuthReturn {
   const router = useRouter();
-  const supabase = createBrowserClient();
+  const supabase: any = createBrowserClient();
   
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -40,7 +40,7 @@ export function useAuth(): UseAuthReturn {
   // Fetch user profile from database
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
-      .from('profiles')
+      .from('users')
       .select('*')
       .eq('id', userId)
       .single();
@@ -138,7 +138,7 @@ export function useAuth(): UseAuthReturn {
 
     if (!error && data.user) {
       // Create profile in database
-      await supabase.from('profiles').insert({
+      await supabase.from('users').insert({
         id: data.user.id,
         email,
         full_name: fullName,
@@ -171,7 +171,7 @@ export function useAuth(): UseAuthReturn {
     }
 
     const { error } = await supabase
-      .from('profiles')
+      .from('users')
       .update(data)
       .eq('id', state.user.id);
 
