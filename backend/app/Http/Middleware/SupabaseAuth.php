@@ -5,8 +5,11 @@ namespace App\Http\Middleware;
 use App\Models\User;
 use Closure;
 use Firebase\JWT\JWT;
+use Firebase\JWT\JWK;
 use Firebase\JWT\Key;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -26,15 +29,11 @@ class SupabaseAuth
         }
 
         try {
-            // Decode and verify JWT signature.
-            $jwtSecret = config('services.supabase.jwt_secret');
-
-            if (empty($jwtSecret)) {
-                Log::error('SUPABASE_JWT_SECRET is not configured.');
-                return response()->json(['message' => 'Autentiseringsfeil.'], 500);
-            }
-
-            $decoded = JWT::decode($token, new Key($jwtSecret, 'HS256'));
+            // Verify JWT signature. Supabase has migrated to asymmetric signing
+            // keys (ES256, published as JWKS); legacy projects still use the
+            // HS256 shared secret. We pick the verifier based on the token's
+            // `alg` header so both work during/after the rotation window.
+            $decoded = $this->verifyToken($token);
 
             // Verify audience: Supabase user tokens carry aud="authenticated".
             // Without this, ANY token signed with the same secret (e.g. a
@@ -102,5 +101,58 @@ class SupabaseAuth
                 'message' => 'Autentiseringsfeil.',
             ], 401);
         }
+    }
+
+    /**
+     * Verify a Supabase JWT, selecting the algorithm from its header.
+     * ES256/RS256 -> verify against the project JWKS (asymmetric, current).
+     * HS256       -> verify against the shared secret (legacy / rotation window).
+     */
+    private function verifyToken(string $token): object
+    {
+        $segments = explode('.', $token);
+        if (count($segments) !== 3) {
+            throw new \UnexpectedValueException('Malformed JWT.');
+        }
+
+        $header = json_decode(JWT::urlsafeB64Decode($segments[0]));
+        $alg = $header->alg ?? null;
+
+        if ($alg === 'HS256') {
+            $secret = config('services.supabase.jwt_secret');
+            if (empty($secret)) {
+                throw new \RuntimeException('SUPABASE_JWT_SECRET is not configured for HS256 tokens.');
+            }
+            return JWT::decode($token, new Key($secret, 'HS256'));
+        }
+
+        // Asymmetric algorithms (ES256 / RS256) — verify against the JWKS.
+        // firebase/php-jwt selects the right key by the token's `kid`.
+        return JWT::decode($token, $this->getJwksKeys());
+    }
+
+    /**
+     * Fetch and cache the project's public signing keys (JWKS).
+     *
+     * @return array<string, Key>
+     */
+    private function getJwksKeys(): array
+    {
+        $baseUrl = rtrim((string) config('services.supabase.url'), '/');
+        if ($baseUrl === '') {
+            throw new \RuntimeException('SUPABASE_URL is not configured (required for JWKS verification).');
+        }
+
+        $jwks = Cache::remember('supabase_jwks', now()->addHour(), function () use ($baseUrl) {
+            $response = Http::timeout(10)->get($baseUrl . '/auth/v1/.well-known/jwks.json');
+            return $response->successful() ? $response->json() : null;
+        });
+
+        if (empty($jwks['keys'])) {
+            Cache::forget('supabase_jwks'); // don't cache a failed fetch
+            throw new \RuntimeException('Unable to fetch Supabase JWKS.');
+        }
+
+        return JWK::parseKeySet($jwks);
     }
 }
