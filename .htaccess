@@ -1,0 +1,9 @@
+# Shared-hosting monorepo: route all requests into the Laravel app at backend/public.
+# public_html/ is the document root; the app lives in backend/, served from backend/public.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Avoid rewrite loop once we're already inside backend/public.
+    RewriteCond %{REQUEST_URI} !^/backend/public/
+    RewriteRule ^(.*)$ /backend/public/$1 [L]
+</IfModule>
