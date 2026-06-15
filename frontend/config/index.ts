@@ -32,26 +32,20 @@ export const config = {
     timeout: 30000,
   },
 
-  // Supabase
+  // Supabase (public, browser-safe values only)
   supabase: {
     url: getEnvVar('NEXT_PUBLIC_SUPABASE_URL'),
     anonKey: getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
-    serviceKey: getEnvVar('SUPABASE_SERVICE_KEY'),
   },
 
-  // OpenAI
-  openai: {
-    apiKey: getEnvVar('OPENAI_API_KEY'),
-    model: getEnvVar('OPENAI_MODEL', 'gpt-4-turbo-preview'),
-    maxTokens: parseInt(getEnvVar('OPENAI_MAX_TOKENS', '4000')),
-  },
-
-  // Stripe
+  // Stripe (publishable key only — secrets live on the Laravel backend)
   stripe: {
     publicKey: getEnvVar('NEXT_PUBLIC_STRIPE_PUBLIC_KEY'),
-    secretKey: getEnvVar('STRIPE_SECRET_KEY'),
-    webhookSecret: getEnvVar('STRIPE_WEBHOOK_SECRET'),
   },
+  // NOTE: OpenAI / Supabase service-role / Stripe secret keys are intentionally
+  // NOT referenced here. They are server-only and live exclusively on the
+  // Laravel backend; keeping them out of this shared module prevents any
+  // accidental import into a client bundle.
 
   // Feature flags
   features: {

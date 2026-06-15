@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase';
-import type { User } from '@supabase/supabase-js';
+import { userApi } from '@/lib/api';
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 import type { UserProfile } from '@/types';
 
 interface AuthState {
@@ -37,21 +38,18 @@ export function useAuth(): UseAuthReturn {
     isAuthenticated: false,
   });
 
-  // Fetch user profile from database
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
+  // Fetch user profile via the Laravel API. (The app tables have RLS enabled
+  // with no policies, so the anon Supabase key CANNOT read them directly —
+  // the backend is the only source of profile data.)
+  const fetchProfile = useCallback(async (): Promise<UserProfile | null> => {
+    try {
+      const res = await userApi.profile();
+      return (res.data?.data ?? null) as UserProfile | null;
+    } catch (error) {
       console.error('Error fetching profile:', error);
       return null;
     }
-
-    return data as UserProfile;
-  }, [supabase]);
+  }, []);
 
   // Initialize auth state
   useEffect(() => {
@@ -60,7 +58,7 @@ export function useAuth(): UseAuthReturn {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id);
+          const profile = await fetchProfile();
           setState({
             user: session.user,
             profile,
@@ -85,9 +83,9 @@ export function useAuth(): UseAuthReturn {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_IN' && session?.user) {
-          const profile = await fetchProfile(session.user.id);
+          const profile = await fetchProfile();
           setState({
             user: session.user,
             profile,
@@ -126,7 +124,7 @@ export function useAuth(): UseAuthReturn {
 
   // Sign up with email and password
   const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -136,16 +134,9 @@ export function useAuth(): UseAuthReturn {
       },
     });
 
-    if (!error && data.user) {
-      // Create profile in database
-      await supabase.from('users').insert({
-        id: data.user.id,
-        email,
-        full_name: fullName,
-        plan: 'free',
-      });
-    }
-
+    // NOTE: the profile row is provisioned server-side by the Laravel
+    // SupabaseAuth middleware on the first authenticated request (RLS blocks
+    // direct inserts via the anon key). full_name is captured during onboarding.
     return { error };
   }, [supabase]);
 
@@ -164,26 +155,24 @@ export function useAuth(): UseAuthReturn {
     return { error };
   }, [supabase]);
 
-  // Update profile
+  // Update profile via the Laravel API (RLS blocks direct table writes).
   const updateProfile = useCallback(async (data: Partial<UserProfile>) => {
     if (!state.user) {
       return { error: new Error('Not authenticated') };
     }
 
-    const { error } = await supabase
-      .from('users')
-      .update(data)
-      .eq('id', state.user.id);
-
-    if (!error) {
+    try {
+      const res = await userApi.updateProfile(data);
+      const updated = (res.data?.data ?? null) as UserProfile | null;
       setState(prev => ({
         ...prev,
-        profile: prev.profile ? { ...prev.profile, ...data } : null,
+        profile: updated ?? (prev.profile ? { ...prev.profile, ...data } : null),
       }));
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
     }
-
-    return { error };
-  }, [supabase, state.user]);
+  }, [state.user]);
 
   return {
     ...state,

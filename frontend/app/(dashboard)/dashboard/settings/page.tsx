@@ -193,21 +193,21 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <PlanCard
             name="Starter"
-            price="199"
-            features={['5 nettsteder', '100 søkeord', 'Daglig oppdatering', 'E-postvarsler']}
+            price="299"
+            features={['3 nettsteder', '100 søkeord', '100 AI-analyser/mnd', 'Daglig oppdatering', 'E-postvarsler']}
             current={profile?.plan === 'starter'}
           />
           <PlanCard
             name="Profesjonell"
-            price="499"
-            features={['20 nettsteder', '500 søkeord', 'Daglig oppdatering', 'AI-verktøy', 'Prioritert støtte']}
+            price="799"
+            features={['10 nettsteder', '500 søkeord', '500 AI-analyser/mnd', 'Konkurrentanalyse', 'API-tilgang', 'Prioritert støtte']}
             current={profile?.plan === 'professional'}
             popular
           />
           <PlanCard
             name="Byrå"
-            price="999"
-            features={['Ubegrenset nettsteder', '2000 søkeord', 'Daglig oppdatering', 'AI-verktøy', 'White-label', 'API-tilgang']}
+            price="1999"
+            features={['Ubegrenset nettsteder', 'Ubegrenset søkeord', 'Ubegrenset AI-analyser', 'White-label', 'Dedikert support']}
             current={profile?.plan === 'agency'}
           />
         </div>

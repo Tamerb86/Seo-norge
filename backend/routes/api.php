@@ -30,8 +30,8 @@ Route::get('/health', function () {
     ]);
 });
 
-// Protected routes (require authentication)
-Route::middleware('auth:api')->group(function () {
+// Protected routes (require authentication via Supabase JWT)
+Route::middleware('supabase')->group(function () {
     
     // User routes
     Route::prefix('user')->group(function () {

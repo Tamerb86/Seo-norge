@@ -132,13 +132,8 @@ class BillingController extends Controller
         $user = $request->user();
         $planId = $validated['plan_id'];
 
-        // Get Stripe price ID
-        $priceId = match($planId) {
-            'starter' => env('STRIPE_PRICE_STARTER'),
-            'professional' => env('STRIPE_PRICE_PROFESSIONAL'),
-            'agency' => env('STRIPE_PRICE_AGENCY'),
-            default => null,
-        };
+        // Get Stripe price ID (config() so it survives config:cache).
+        $priceId = config("services.stripe.prices.{$planId}");
 
         if (!$priceId) {
             return response()->json([
@@ -158,7 +153,9 @@ class BillingController extends Controller
                     ],
                 ]);
                 $customerId = $customer->id;
-                $user->update(['stripe_customer_id' => $customerId]);
+                // stripe_customer_id is not mass-assignable (server-controlled).
+                $user->stripe_customer_id = $customerId;
+                $user->save();
             }
 
             // Create checkout session
@@ -170,8 +167,8 @@ class BillingController extends Controller
                     'quantity' => 1,
                 ]],
                 'mode' => 'subscription',
-                'success_url' => config('app.frontend_url') . '/dashboard/billing?success=true',
-                'cancel_url' => config('app.frontend_url') . '/dashboard/billing?canceled=true',
+                'success_url' => config('services.frontend.url') . '/dashboard/billing?success=true',
+                'cancel_url' => config('services.frontend.url') . '/dashboard/billing?canceled=true',
                 'metadata' => [
                     'user_id' => $user->id,
                     'plan_id' => $planId,
@@ -212,7 +209,7 @@ class BillingController extends Controller
         try {
             $session = PortalSession::create([
                 'customer' => $user->stripe_customer_id,
-                'return_url' => config('app.frontend_url') . '/dashboard/billing',
+                'return_url' => config('services.frontend.url') . '/dashboard/billing',
             ]);
 
             return response()->json([
@@ -343,10 +340,10 @@ class BillingController extends Controller
             return;
         }
 
-        $user->update([
-            'plan' => $planId,
-            'stripe_subscription_id' => $session->subscription,
-        ]);
+        // plan / stripe_subscription_id are server-controlled (not fillable).
+        $user->plan = $planId;
+        $user->stripe_subscription_id = $session->subscription;
+        $user->save();
 
         Log::info('User plan updated after checkout', [
             'user_id' => $userId,
@@ -373,7 +370,8 @@ class BillingController extends Controller
         $plan = $this->getPlanFromPriceId($priceId);
 
         if ($plan) {
-            $user->update(['plan' => $plan]);
+            $user->plan = $plan;
+            $user->save();
             Log::info('User plan updated', [
                 'user_id' => $user->id,
                 'plan' => $plan,
@@ -392,10 +390,9 @@ class BillingController extends Controller
             return;
         }
 
-        $user->update([
-            'plan' => 'free',
-            'stripe_subscription_id' => null,
-        ]);
+        $user->plan = 'free';
+        $user->stripe_subscription_id = null;
+        $user->save();
 
         Log::info('User downgraded to free plan', ['user_id' => $user->id]);
     }
@@ -428,10 +425,12 @@ class BillingController extends Controller
             return null;
         }
 
+        $prices = config('services.stripe.prices');
+
         return match($priceId) {
-            env('STRIPE_PRICE_STARTER') => 'starter',
-            env('STRIPE_PRICE_PROFESSIONAL') => 'professional',
-            env('STRIPE_PRICE_AGENCY') => 'agency',
+            $prices['starter'] => 'starter',
+            $prices['professional'] => 'professional',
+            $prices['agency'] => 'agency',
             default => null,
         };
     }

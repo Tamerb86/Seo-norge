@@ -15,14 +15,22 @@ class User extends Authenticatable
      * The attributes that are mass assignable.
      */
     protected $fillable = [
-        'id',
         'email',
         'full_name',
         'company',
-        'plan',
-        'stripe_customer_id',
-        'stripe_subscription_id',
+        'role',
+        'onboarding_completed',
+        'onboarding_completed_at',
+        'goals',
+        'seo_experience',
+        'checklist_dismissed',
+        'checklist_dismissed_at',
+        'ai_analyses_count',
     ];
+    // NOTE: `id`, `plan`, and `stripe_*` are deliberately NOT fillable.
+    // - id: set explicitly from the Supabase token in SupabaseAuth middleware.
+    // - plan / stripe_*: set server-side only (Stripe webhook) via explicit
+    //   property assignment, never from request input.
 
     /**
      * The attributes that should be hidden for serialization.
@@ -36,6 +44,12 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'onboarding_completed' => 'boolean',
+        'onboarding_completed_at' => 'datetime',
+        'checklist_dismissed' => 'boolean',
+        'checklist_dismissed_at' => 'datetime',
+        'goals' => 'array',
+        'ai_analyses_count' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

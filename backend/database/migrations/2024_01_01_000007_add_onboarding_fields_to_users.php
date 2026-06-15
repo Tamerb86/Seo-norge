@@ -12,11 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            // Profile fields
-            $table->string('full_name')->nullable()->after('email');
-            $table->string('company')->nullable()->after('full_name');
+            // NOTE: full_name and company already exist (migration 000001).
+            // Only genuinely new columns are added here.
             $table->string('role')->nullable()->after('company');
-            
+
             // Onboarding status
             $table->boolean('onboarding_completed')->default(false)->after('role');
             $table->timestamp('onboarding_completed_at')->nullable()->after('onboarding_completed');
@@ -41,8 +40,6 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             $table->dropColumn([
-                'full_name',
-                'company',
                 'role',
                 'onboarding_completed',
                 'onboarding_completed_at',
